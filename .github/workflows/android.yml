@@ -2,7 +2,7 @@ name: Crea APK
 
 on:
   push:
-    branches: [ "principale" ]
+    branches: [ "Principale" ]
 
 jobs:
   build:
