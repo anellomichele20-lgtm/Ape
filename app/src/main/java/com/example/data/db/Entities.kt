@@ -51,3 +51,33 @@ data class GeneratedImageEntity(
     val createdAt: Long = System.currentTimeMillis(),
     val isFavorite: Boolean = false
 )
+
+@Entity(tableName = "flashcard_decks")
+data class FlashcardDeckEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val title: String,
+    val subject: String,
+    val createdAt: Long = System.currentTimeMillis()
+)
+
+@Entity(
+    tableName = "flashcard_items",
+    foreignKeys = [
+        ForeignKey(
+            entity = FlashcardDeckEntity::class,
+            parentColumns = ["id"],
+            childColumns = ["deckId"],
+            onDelete = ForeignKey.CASCADE
+        )
+    ],
+    indices = [Index(value = ["deckId"])]
+)
+data class FlashcardItemEntity(
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+    val deckId: Long,
+    val front: String,
+    val back: String,
+    val isMastered: Boolean = false
+)

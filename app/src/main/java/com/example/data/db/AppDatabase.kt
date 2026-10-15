@@ -9,14 +9,17 @@ import androidx.room.RoomDatabase
     entities = [
         ChatSessionEntity::class,
         ChatMessageEntity::class,
-        GeneratedImageEntity::class
+        GeneratedImageEntity::class,
+        FlashcardDeckEntity::class,
+        FlashcardItemEntity::class
     ],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun chatDao(): ChatDao
     abstract fun imageDao(): ImageDao
+    abstract fun flashcardDao(): FlashcardDao
 
     companion object {
         @Volatile

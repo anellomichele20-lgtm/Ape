@@ -61,3 +61,33 @@ interface ImageDao {
     @Query("DELETE FROM generated_images WHERE id = :id")
     suspend fun deleteImage(id: Long)
 }
+
+@Dao
+interface FlashcardDao {
+    @Query("SELECT * FROM flashcard_decks ORDER BY createdAt DESC")
+    fun getAllDecks(): Flow<List<FlashcardDeckEntity>>
+
+    @Query("SELECT * FROM flashcard_decks WHERE id = :deckId LIMIT 1")
+    suspend fun getDeckById(deckId: Long): FlashcardDeckEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertDeck(deck: FlashcardDeckEntity): Long
+
+    @Query("DELETE FROM flashcard_decks WHERE id = :deckId")
+    suspend fun deleteDeck(deckId: Long)
+
+    @Query("SELECT * FROM flashcard_items WHERE deckId = :deckId ORDER BY id ASC")
+    fun getCardsForDeck(deckId: Long): Flow<List<FlashcardItemEntity>>
+
+    @Query("SELECT * FROM flashcard_items WHERE deckId = :deckId ORDER BY id ASC")
+    suspend fun getCardsListForDeck(deckId: Long): List<FlashcardItemEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertCards(cards: List<FlashcardItemEntity>)
+
+    @Query("UPDATE flashcard_items SET isMastered = :isMastered WHERE id = :cardId")
+    suspend fun updateCardMastered(cardId: Long, isMastered: Boolean)
+
+    @Query("DELETE FROM flashcard_items WHERE id = :cardId")
+    suspend fun deleteCard(cardId: Long)
+}

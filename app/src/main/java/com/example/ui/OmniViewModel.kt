@@ -5,14 +5,23 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.data.db.ChatMessageEntity
 import com.example.data.db.ChatSessionEntity
+import com.example.data.db.FlashcardDeckEntity
 import com.example.data.db.GeneratedImageEntity
 import com.example.data.model.AiModelType
 import com.example.data.model.ChatRole
+import com.example.data.model.FlashcardDeck
+import com.example.data.model.FlashcardItem
+import com.example.data.model.QuizSession
+import com.example.data.model.StudyTool
 import com.example.data.repository.OmniRepository
+import com.example.ui.voice.VoiceManager
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
@@ -20,12 +29,14 @@ import kotlinx.coroutines.launch
 
 enum class AppTab {
     CHAT,
+    STUDY,
     IMAGE_GENERATOR,
     GALLERY_HISTORY
 }
 
 class OmniViewModel(application: Application) : AndroidViewModel(application) {
     val repository = OmniRepository(application)
+    val voiceManager = VoiceManager(application)
 
     // Current Active Tab
     private val _currentTab = MutableStateFlow(AppTab.CHAT)
@@ -33,6 +44,23 @@ class OmniViewModel(application: Application) : AndroidViewModel(application) {
 
     fun selectTab(tab: AppTab) {
         _currentTab.value = tab
+    }
+
+    // Voice State delegating to VoiceManager
+    val isSpeaking: StateFlow<Boolean> = voiceManager.isSpeaking
+    val activeUtteranceId: StateFlow<String?> = voiceManager.activeUtteranceId
+    val autoSpeakEnabled: StateFlow<Boolean> = voiceManager.autoSpeakEnabled
+
+    fun toggleSpeakMessage(content: String, messageId: Long) {
+        voiceManager.toggleSpeak(content, "msg_$messageId")
+    }
+
+    fun stopSpeaking() {
+        voiceManager.stop()
+    }
+
+    fun setAutoSpeak(enabled: Boolean) {
+        voiceManager.setAutoSpeak(enabled)
     }
 
     // --- Chat State ---
@@ -136,7 +164,12 @@ class OmniViewModel(application: Application) : AndroidViewModel(application) {
                     modelType = _selectedModel.value
                 )
 
-                if (result.isFailure) {
+                if (result.isSuccess) {
+                    val reply = result.getOrNull() ?: ""
+                    if (voiceManager.autoSpeakEnabled.value && reply.isNotEmpty()) {
+                        voiceManager.speak(reply)
+                    }
+                } else {
                     _chatErrorMessage.value = result.exceptionOrNull()?.localizedMessage ?: "Errore nella risposta"
                 }
             } catch (e: Exception) {
@@ -149,6 +182,214 @@ class OmniViewModel(application: Application) : AndroidViewModel(application) {
 
     fun clearChatError() {
         _chatErrorMessage.value = null
+    }
+
+    // --- Study & Educational Tools State ---
+    private val _selectedStudyTool = MutableStateFlow(StudyTool.FLASHCARDS)
+    val selectedStudyTool: StateFlow<StudyTool> = _selectedStudyTool.asStateFlow()
+
+    fun selectStudyTool(tool: StudyTool) {
+        _selectedStudyTool.value = tool
+    }
+
+    // Flashcard Deck State
+    val allFlashcardDecks: StateFlow<List<FlashcardDeckEntity>> = repository.getAllFlashcardDecks()
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _activeDeck = MutableStateFlow<FlashcardDeck?>(null)
+    val activeDeck: StateFlow<FlashcardDeck?> = _activeDeck.asStateFlow()
+
+    private val _currentCardIndex = MutableStateFlow(0)
+    val currentCardIndex: StateFlow<Int> = _currentCardIndex.asStateFlow()
+
+    private val _isCardFlipped = MutableStateFlow(false)
+    val isCardFlipped: StateFlow<Boolean> = _isCardFlipped.asStateFlow()
+
+    private val _isGeneratingCards = MutableStateFlow(false)
+    val isGeneratingCards: StateFlow<Boolean> = _isGeneratingCards.asStateFlow()
+
+    fun flipCard() {
+        _isCardFlipped.value = !_isCardFlipped.value
+    }
+
+    fun nextCard() {
+        val total = _activeDeck.value?.cards?.size ?: 0
+        if (total > 0 && _currentCardIndex.value < total - 1) {
+            _currentCardIndex.value++
+            _isCardFlipped.value = false
+        }
+    }
+
+    fun prevCard() {
+        if (_currentCardIndex.value > 0) {
+            _currentCardIndex.value--
+            _isCardFlipped.value = false
+        }
+    }
+
+    fun markCurrentCard(isMastered: Boolean) {
+        val deck = _activeDeck.value ?: return
+        val currentCard = deck.cards.getOrNull(_currentCardIndex.value) ?: return
+
+        viewModelScope.launch {
+            repository.toggleCardMastered(currentCard.id, isMastered)
+            val updatedCards = deck.cards.mapIndexed { idx, item ->
+                if (idx == _currentCardIndex.value) item.copy(isMastered = isMastered) else item
+            }
+            _activeDeck.value = deck.copy(cards = updatedCards)
+            nextCard()
+        }
+    }
+
+    fun generateFlashcards(topic: String) {
+        if (topic.isBlank() || _isGeneratingCards.value) return
+        _isGeneratingCards.value = true
+
+        viewModelScope.launch {
+            try {
+                val result = repository.generateFlashcards(topic)
+                if (result.isSuccess) {
+                    _activeDeck.value = result.getOrNull()
+                    _currentCardIndex.value = 0
+                    _isCardFlipped.value = false
+                }
+            } finally {
+                _isGeneratingCards.value = false
+            }
+        }
+    }
+
+    fun loadDeck(deckId: Long) {
+        viewModelScope.launch {
+            val entities = repository.getCardsForDeck(deckId).firstOrNull() ?: emptyList()
+            val deckEntity = allFlashcardDecks.value.firstOrNull { it.id == deckId }
+            if (deckEntity != null) {
+                _activeDeck.value = FlashcardDeck(
+                    id = deckEntity.id,
+                    title = deckEntity.title,
+                    subject = deckEntity.subject,
+                    cards = entities.map {
+                        FlashcardItem(id = it.id, front = it.front, back = it.back, isMastered = it.isMastered)
+                    }
+                )
+                _currentCardIndex.value = 0
+                _isCardFlipped.value = false
+            }
+        }
+    }
+
+    fun deleteDeck(deckId: Long) {
+        viewModelScope.launch {
+            repository.deleteFlashcardDeck(deckId)
+            if (_activeDeck.value?.id == deckId) {
+                _activeDeck.value = null
+            }
+        }
+    }
+
+    // Quiz Simulator State
+    private val _activeQuiz = MutableStateFlow<QuizSession?>(null)
+    val activeQuiz: StateFlow<QuizSession?> = _activeQuiz.asStateFlow()
+
+    private val _isGeneratingQuiz = MutableStateFlow(false)
+    val isGeneratingQuiz: StateFlow<Boolean> = _isGeneratingQuiz.asStateFlow()
+
+    private val _quizUserAnswers = MutableStateFlow<Map<Int, Int>>(emptyMap())
+    val quizUserAnswers: StateFlow<Map<Int, Int>> = _quizUserAnswers.asStateFlow()
+
+    fun generateQuiz(topic: String) {
+        if (topic.isBlank() || _isGeneratingQuiz.value) return
+        _isGeneratingQuiz.value = true
+        _quizUserAnswers.value = emptyMap()
+
+        viewModelScope.launch {
+            try {
+                val result = repository.generateQuiz(topic)
+                if (result.isSuccess) {
+                    _activeQuiz.value = result.getOrNull()
+                }
+            } finally {
+                _isGeneratingQuiz.value = false
+            }
+        }
+    }
+
+    fun answerQuizQuestion(questionIndex: Int, optionIndex: Int) {
+        val current = _quizUserAnswers.value.toMutableMap()
+        current[questionIndex] = optionIndex
+        _quizUserAnswers.value = current
+    }
+
+    fun resetQuiz() {
+        _activeQuiz.value = null
+        _quizUserAnswers.value = emptyMap()
+    }
+
+    // Feynman Technique State
+    private val _feynmanResult = MutableStateFlow<String?>(null)
+    val feynmanResult: StateFlow<String?> = _feynmanResult.asStateFlow()
+
+    private val _isGeneratingFeynman = MutableStateFlow(false)
+    val isGeneratingFeynman: StateFlow<Boolean> = _isGeneratingFeynman.asStateFlow()
+
+    fun generateFeynman(concept: String) {
+        if (concept.isBlank() || _isGeneratingFeynman.value) return
+        _isGeneratingFeynman.value = true
+        _feynmanResult.value = null
+
+        viewModelScope.launch {
+            try {
+                val result = repository.explainConceptFeynman(concept)
+                _feynmanResult.value = result.getOrNull()
+                if (voiceManager.autoSpeakEnabled.value && _feynmanResult.value != null) {
+                    voiceManager.speak(_feynmanResult.value!!)
+                }
+            } finally {
+                _isGeneratingFeynman.value = false
+            }
+        }
+    }
+
+    // Pomodoro Timer State
+    private val _pomodoroSeconds = MutableStateFlow(25 * 60)
+    val pomodoroSeconds: StateFlow<Int> = _pomodoroSeconds.asStateFlow()
+
+    private val _isPomodoroRunning = MutableStateFlow(false)
+    val isPomodoroRunning: StateFlow<Boolean> = _isPomodoroRunning.asStateFlow()
+
+    private val _isPomodoroBreak = MutableStateFlow(false)
+    val isPomodoroBreak: StateFlow<Boolean> = _isPomodoroBreak.asStateFlow()
+
+    private var pomodoroJob: Job? = null
+
+    fun togglePomodoro() {
+        if (_isPomodoroRunning.value) {
+            pomodoroJob?.cancel()
+            _isPomodoroRunning.value = false
+        } else {
+            _isPomodoroRunning.value = true
+            pomodoroJob = viewModelScope.launch {
+                while (_pomodoroSeconds.value > 0) {
+                    delay(1000)
+                    _pomodoroSeconds.value--
+                }
+                _isPomodoroRunning.value = false
+                val nextIsBreak = !_isPomodoroBreak.value
+                _isPomodoroBreak.value = nextIsBreak
+                _pomodoroSeconds.value = if (nextIsBreak) 5 * 60 else 25 * 60
+                voiceManager.speak(
+                    if (nextIsBreak) "Ottimo lavoro! Sessione di studio completata. È il momento di 5 minuti di pausa."
+                    else "Pausa terminata. Riprendiamo la sessione di studio concentrato!"
+                )
+            }
+        }
+    }
+
+    fun resetPomodoro() {
+        pomodoroJob?.cancel()
+        _isPomodoroRunning.value = false
+        _isPomodoroBreak.value = false
+        _pomodoroSeconds.value = 25 * 60
     }
 
     // --- Image Generator State ---
@@ -271,4 +512,10 @@ class OmniViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun isApiKeyReady(): Boolean = repository.isApiKeyConfigured()
+
+    override fun onCleared() {
+        super.onCleared()
+        pomodoroJob?.cancel()
+        voiceManager.shutdown()
+    }
 }

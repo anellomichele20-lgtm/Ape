@@ -13,8 +13,10 @@ import androidx.compose.material.icons.automirrored.filled.Chat
 import androidx.compose.material.icons.automirrored.outlined.Chat
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Collections
+import androidx.compose.material.icons.filled.School
 import androidx.compose.material.icons.outlined.AutoAwesome
 import androidx.compose.material.icons.outlined.Collections
+import androidx.compose.material.icons.outlined.School
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -31,6 +33,7 @@ import com.example.ui.components.ApiKeyDialog
 import com.example.ui.screens.ChatScreen
 import com.example.ui.screens.GalleryAndHistoryScreen
 import com.example.ui.screens.ImageGeneratorScreen
+import com.example.ui.screens.StudyScreen
 import com.example.ui.theme.OmniAITheme
 
 class MainActivity : ComponentActivity() {
@@ -77,8 +80,21 @@ fun MainAppScreen(viewModel: OmniViewModel) {
                             contentDescription = "Chat AI"
                         )
                     },
-                    label = { Text("Chat AI") },
+                    label = { Text("Chat") },
                     modifier = Modifier.testTag("nav_chat_tab")
+                )
+
+                NavigationBarItem(
+                    selected = currentTab == AppTab.STUDY,
+                    onClick = { viewModel.selectTab(AppTab.STUDY) },
+                    icon = {
+                        Icon(
+                            imageVector = if (currentTab == AppTab.STUDY) Icons.Filled.School else Icons.Outlined.School,
+                            contentDescription = "Studio AI"
+                        )
+                    },
+                    label = { Text("Studio") },
+                    modifier = Modifier.testTag("nav_study_tab")
                 )
 
                 NavigationBarItem(
@@ -90,7 +106,7 @@ fun MainAppScreen(viewModel: OmniViewModel) {
                             contentDescription = "Crea Immagine"
                         )
                     },
-                    label = { Text("Immagini HD") },
+                    label = { Text("Immagini") },
                     modifier = Modifier.testTag("nav_image_tab")
                 )
 
@@ -103,7 +119,7 @@ fun MainAppScreen(viewModel: OmniViewModel) {
                             contentDescription = "Galleria & Cronologia"
                         )
                     },
-                    label = { Text("Galleria") },
+                    label = { Text("Archivio") },
                     modifier = Modifier.testTag("nav_gallery_tab")
                 )
             }
@@ -116,6 +132,7 @@ fun MainAppScreen(viewModel: OmniViewModel) {
         ) {
             when (currentTab) {
                 AppTab.CHAT -> ChatScreen(viewModel = viewModel)
+                AppTab.STUDY -> StudyScreen(viewModel = viewModel)
                 AppTab.IMAGE_GENERATOR -> ImageGeneratorScreen(viewModel = viewModel)
                 AppTab.GALLERY_HISTORY -> GalleryAndHistoryScreen(viewModel = viewModel)
             }

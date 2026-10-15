@@ -1,6 +1,6 @@
 {
   "name": "OmniAI",
-  "description": "Assistente AI completo con generazione di immagini in alta risoluzione (1K, 2K, 4K) e chat conversazionale multi-modello",
+  "description": "Assistente AI completo con risposte vocali, suite di studio (Flashcard, Quiz, Feynman, Pomodoro), chat multi-modello e immagini in HD",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

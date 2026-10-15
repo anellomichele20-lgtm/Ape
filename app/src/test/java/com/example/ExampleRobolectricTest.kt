@@ -5,6 +5,9 @@ import androidx.test.core.app.ApplicationProvider
 import com.example.data.api.GeminiModelConstants
 import com.example.data.model.AiModelType
 import com.example.data.model.ChatRole
+import com.example.data.model.FlashcardItem
+import com.example.data.model.QuizQuestion
+import com.example.data.model.StudyTool
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Test
@@ -36,5 +39,22 @@ class ExampleRobolectricTest {
 
     val defaultModel = AiModelType.fromModelId(GeminiModelConstants.CHAT_GENERAL)
     assertEquals(AiModelType.GENERAL, defaultModel)
+  }
+
+  @Test
+  fun `verify study tools and models`() {
+    val tools = StudyTool.entries
+    assertEquals(4, tools.size)
+
+    val card = FlashcardItem(front = "Cos'è il DNA?", back = "Acido desossiribonucleico")
+    assertEquals("Cos'è il DNA?", card.front)
+
+    val quiz = QuizQuestion(
+        question = "Qual è la capitale d'Italia?",
+        options = listOf("Milano", "Roma", "Napoli", "Torino"),
+        correctIndex = 1,
+        explanation = "Roma è la capitale dal 1871"
+    )
+    assertEquals(1, quiz.correctIndex)
   }
 }
